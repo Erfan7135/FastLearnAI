@@ -14,5 +14,8 @@ __pycache__/
 .vscode/
 .DS_Store
 
+# DB files
+instance/
+
 # Environment variables
 .env
