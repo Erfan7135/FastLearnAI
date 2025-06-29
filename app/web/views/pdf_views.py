@@ -1,42 +1,54 @@
 import os
-import uuid
-from flask import request, jsonify, Blueprint
+import shutil
+from flask import request, jsonify, Blueprint, session, g, current_app
 from app.web.db.models.base import Pdf
 from app.web.app import db
+from app.web.hooks import login_required, handle_file_upload
 
 pdf_bp = Blueprint('pdf', __name__, url_prefix='/api/pdfs')
 
+@pdf_bp.route('/', methods=['GET'])
+@login_required
+def list_pdfs():
+    pdfs= Pdf.query.filter_by(user_id=g.user.id).all()
+    if not pdfs:
+        return jsonify([])
+    return jsonify([pdf.as_dict() for pdf in pdfs])
+
+
 # We will add authentication to this later
 @pdf_bp.route('/', methods=['POST'])
-def upload_file():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
+@login_required
+@handle_file_upload
+def upload_file(file_id, file_path, file_name):
+    upload_dir = current_app.config['UPLOAD_FOLDER']
+    if not os.path.exists(upload_dir):
+        os.makedirs(upload_dir)
 
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
+    # Move the file to the upload directory
+    permanent_file_path = os.path.join(upload_dir, file_id + '.pdf')
 
-    if file and file.filename.endswith('.pdf'):
-        # Create a secure, unique filename
-        filename = str(uuid.uuid4()) + ".pdf"
-        
-        # Create uploads directory if it doesn't exist
-        if not os.path.exists('uploads'):
-            os.makedirs('uploads')
+    shutil.move(file_path, permanent_file_path)
 
-        file_path = os.path.join('uploads', filename)
-        file.save(file_path)
+    # Create a new Pdf object
+    pdf =Pdf.create(id=file_id, name=file_name, user_id=g.user.id, 
+                    file_path=permanent_file_path)
+    
+    # TODO Dispatch Celery task to process the PDF
+    # process_pdf.delay(pdf.id)
 
-        # For now, we'll hardcode a user_id. We'll fix this with real auth later.
-        hardcoded_user_id = "_NEEDS_REAL_USER_ID_"
+    return jsonify({'message': 'File uploaded successfully', 'pdf': pdf.as_dict()}), 201
 
-        new_pdf = Pdf(name=file.filename, user_id=hardcoded_user_id, file_path=file_path)
-        db.session.add(new_pdf)
-        db.session.commit()
-
-        # TODO: Dispatch Celery task to process this PDF
-        # process_document.delay(new_pdf.id)
-
-        return jsonify({'message': 'File uploaded successfully', 'pdf_id': new_pdf.id}), 201
-    else:
-        return jsonify({'error': 'Invalid file type, only PDF allowed'}), 400
+@pdf_bp.route("/<string:pdf_id>", methods=["GET"])
+@login_required
+# @load_model(Pdf) # We will implement load_model in hooks later if needed
+def show(pdf_id):
+    pdf = Pdf.find_by(id=pdf_id, user_id=g.user.id)
+    if not pdf:
+        return jsonify({'error': 'PDF not found'}), 404
+    return jsonify(
+        {
+            "pdf": pdf.as_dict(),
+            # "download_url": files.create_download_url(pdf.id), # No longer needed
+        }
+    )

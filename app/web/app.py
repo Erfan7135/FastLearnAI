@@ -1,5 +1,5 @@
 import os
-from flask import Flask
+from flask import Flask, session, g
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
 
@@ -14,8 +14,17 @@ def create_app():
     app = Flask(__name__)
     
     # Set configuration from environment variables
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///project.db'
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///app.db')
+    # If you are using SQLite, you can change the URI to 'sqlite:///app.db
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY') 
+
+    if not app.config['SECRET_KEY']:
+        raise ValueError("No SECRET_KEY set for Flask application. Please set the SECRET_KEY environment variable.")
+    
+    app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'uploads')
+    app.config['TEMP_FOLDER'] = os.getenv('TEMP_FOLDER', 'temp')
     
     # Initialize the database with the app
     db.init_app(app)
@@ -25,6 +34,16 @@ def create_app():
     from app.web.views.pdf_views import pdf_bp
     app.register_blueprint(auth_bp)
     app.register_blueprint(pdf_bp)
+
+    @app.before_request
+    def load_logged_in_user():
+        """Load the logged-in user into the global context."""
+        user_id = session.get('user_id')
+        if user_id is None:
+            g.user = None
+        else:
+            from app.web.db.models.base import User
+            g.user = User.find_by(id=user_id)
 
 
     # A simple route for testing
