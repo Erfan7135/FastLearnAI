@@ -1,5 +1,6 @@
 #gemini
 *gemini/
+gemini.md
 
 # Virtual Environment
 venv/
@@ -16,6 +17,9 @@ __pycache__/
 
 # DB files
 instance/
+
+# pdf files
+pdfs/
 
 # Environment variables
 .env
